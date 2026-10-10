@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>운영자 대시보드 — 춘천을 노래하다</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #111; --panel: #1c1c1c; --line: #2c2c2c; --text: #eee; --muted: #999; --accent: #1DB954; --bad: #ff6b6b; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); padding: 24px 16px; }
+        .wrap { max-width: 1100px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+        h1 { font-size: 1.3rem; }
+        h2 { font-size: 0.95rem; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+        .login { display: flex; gap: 8px; }
+        input { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 8px 12px; font: inherit; }
+        button, .btn { background: var(--accent); color: #000; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+        .kpi b { display: block; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+        .kpi span { color: var(--muted); font-size: 0.8rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+        .bar-row { display: grid; grid-template-columns: 110px 1fr 36px; align-items: center; gap: 8px; font-size: 0.85rem; margin: 6px 0; }
+        .bar-row .track { background: #262626; border-radius: 4px; height: 10px; overflow: hidden; }
+        .bar-row .fill { background: var(--accent); height: 100%; border-radius: 4px; }
+        .bar-row .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { color: var(--muted); font-weight: 600; }
+        td a { color: var(--accent); }
+        .st-failed { color: var(--bad); }
+        .st-queued, .st-generating { color: #f5a623; }
+        .table-wrap { overflow-x: auto; }
+        .msg { color: var(--muted); padding: 40px 0; text-align: center; }
+        ol { padding-left: 20px; font-size: 0.85rem; } ol li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>🎧 춘천을 노래하다 · 운영자 대시보드</h1>
+        <div class="login">
+            <input type="password" id="token" placeholder="ADMIN_TOKEN">
+            <button onclick="load()">불러오기</button>
+            <a class="btn ghost" id="csv" href="#" onclick="downloadCsv(event)">CSV 내려받기</a>
+        </div>
+    </header>
+    <div id="content"><p class="msg">운영자 토큰을 입력하세요.</p></div>
+</div>
+<script>
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let timer = null;
+
+    try { $('token').value = sessionStorage.getItem('adminToken') || ''; } catch (e) {}
+    if ($('token').value) load();
+
+    function bars(obj) {
+        const entries = Object.entries(obj || {}).filter(([k]) => k && k !== 'undefined').sort((a, b) => b[1] - a[1]);
+        const max = Math.max(1, ...entries.map(e => e[1]));
+        return entries.map(([k, v]) => `<div class="bar-row"><span>${esc(k)}</span><div class="track"><div class="fill" style="width:${v / max * 100}%"></div></div><span class="n">${v}</span></div>`).join('')
+            || '<p class="msg">데이터 없음</p>';
+    }
+
+    async function load() {
+        const token = $('token').value.trim();
+        try { sessionStorage.setItem('adminToken', token); } catch (e) {}
+        const res = await fetch('/api/admin/stats', { headers: { 'X-Admin-Token': token } });
+        if (res.status === 401) { $('content').innerHTML = '<p class="msg">토큰이 올바르지 않습니다.</p>'; return; }
+        const s = await res.json();
+        const st = s.status || {};
+        $('content').innerHTML = `
+            <div class="kpis">
+                <div class="kpi"><b>${s.total}</b><span>전체 제작 곡</span></div>
+                <div class="kpi"><b>${st.completed || 0}</b><span>완성</span></div>
+                <div class="kpi"><b>${(st.queued || 0) + (st.generating || 0)}</b><span>제작 중 (대기열 ${s.queueLength})</span></div>
+                <div class="kpi"><b class="${st.failed ? 'st-failed' : ''}">${st.failed || 0}</b><span>실패</span></div>
+                <div class="kpi"><b>${s.uniqueParticipants}</b><span>4자리 등록 참가자</span></div>
+                <div class="kpi"><b>${s.avgGenerationSec != null ? s.avgGenerationSec + '초' : '-'}</b><span>평균 생성 시간</span></div>
+            </div>
+            <div class="grid">
+                <div class="card"><h2>📍 장소 선택</h2>${bars(s.places)}</div>
+                <div class="card"><h2>🍽️ 미식 선택</h2>${bars(s.foods)}</div>
+                <div class="card"><h2>✨ 순간 선택</h2>${bars(s.moments)}</div>
+            </div>
+            <div class="grid">
+                <div class="card"><h2>📅 날짜별 참여</h2>${bars(Object.fromEntries(Object.entries(s.byDay || {}).sort()))}</div>
+                <div class="card"><h2>🏆 인기 조합 TOP 10</h2><ol>${(s.topCombos || []).map(([k, v]) => `<li>${esc(k)} <span style="color:var(--muted)">(${v})</span></li>`).join('') || '<p class="msg">데이터 없음</p>'}</ol></div>
+            </div>
+            <div class="card">
+                <h2>최근 30곡</h2>
+                <div class="table-wrap"><table>
+                    <tr><th>시각</th><th>닉네임</th><th>제목</th><th>장소 · 미식 · 순간</th><th>상태</th><th></th></tr>
+                    ${(s.recent || []).map(r => `<tr>
+                        <td>${new Date(r.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                        <td>${esc(r.nickname)}</td><td>${esc(r.title)}</td>
+                        <td>${esc([r.place, r.food, r.moment].join(' · '))}</td>
+                        <td class="st-${r.status}" title="${esc(r.error || '')}">${esc(r.status)}</td>
+                        <td><a href="/s/${r.id}" target="_blank">열기</a></td></tr>`).join('')}
+                </table></div>
+            </div>`;
+        clearTimeout(timer);
+        timer = setTimeout(load, 15000);   // 행사 중 자동 새로고침
+    }
+
+    async function downloadCsv(e) {
+        e.preventDefault();
+        const res = await fetch('/api/admin/export.csv', { headers: { 'X-Admin-Token': $('token').value.trim() } });
+        if (!res.ok) return alert('토큰을 확인하세요.');
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `춘천을노래하다_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부스 키링 교환 — 춘천을 노래하다</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+    <script src="/vendor/qrcode.min.js"></script>
+    <style>
+        /* style.css는 인쇄 규격(키링)만 가져다 쓰고, 화면은 여기서 다시 정의 */
+        body { display: block; height: auto; width: auto; overflow: auto; background: #111; padding: 20px 16px 60px; }
+        .wrap { max-width: 1100px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        header h1 { font-size: 1.3rem; font-family: var(--font-sans); }
+        .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .bar input[type=text], .bar input[type=password] {
+            background: #1c1c1c; border: 1px solid #333; color: #eee; border-radius: 10px; padding: 10px 14px; font: inherit; min-width: 0;
+        }
+        #search { width: 150px; font-size: 1.1rem; }
+        .bar label { font-size: 0.85rem; color: #bbb; display: flex; gap: 6px; align-items: center; }
+        .btn { border: 0; border-radius: 10px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+        .btn.primary { background: var(--primary-color); color: #000; }
+        .btn.ghost { background: transparent; color: #eee; border: 1px solid #444; }
+        .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+        .item { background: #1c1c1c; border: 1px solid #2c2c2c; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+        .item.printed { opacity: 0.55; }
+        .item .no { font-size: 2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+        .item .title { font-weight: 700; }
+        .item .meta { font-size: 0.8rem; color: #999; }
+        .item .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
+        .badge { font-size: 0.72rem; border-radius: 10px; padding: 2px 8px; background: #333; color: #ddd; white-space: nowrap; }
+        .badge.completed { background: rgba(29,185,84,.2); color: #5fe08f; }
+        .badge.failed { background: rgba(255,90,90,.2); color: #ff8b8b; }
+        .badge.queued, .badge.generating { background: rgba(245,166,35,.2); color: #f5c060; }
+        .msg { color: #888; text-align: center; padding: 40px 0; }
+        #print-poster { display: none; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            body.poster-mode #print-ticket { display: none !important; }
+            body.poster-mode #print-poster, body.poster-mode #print-poster * { visibility: visible; }
+            body.poster-mode #print-poster {
+                display: flex !important; position: fixed; inset: 0; flex-direction: column; align-items: center; justify-content: center;
+                color: #111; font-family: 'Noto Sans KR', sans-serif; text-align: center; padding: 15mm;
+            }
+            .poster-kicker { font-size: 16pt; color: #1DB954; font-weight: 700; letter-spacing: 1pt; }
+            .poster-title { font-size: 44pt; font-weight: 900; line-height: 1.15; margin: 4mm 0 3mm; }
+            .poster-sub { font-size: 15pt; color: #444; margin-bottom: 10mm; }
+            #poster-qr img, #poster-qr canvas { width: 110mm !important; height: 110mm !important; }
+            .poster-steps { display: flex; gap: 8mm; margin-top: 10mm; font-size: 13pt; }
+            .poster-steps div { border: 1pt solid #ccc; border-radius: 4mm; padding: 4mm 5mm; width: 56mm; word-break: keep-all; }
+            .poster-steps b { display: block; font-size: 18pt; color: #1DB954; }
+            .poster-code { margin-top: 8mm; font-size: 12pt; color: #666; }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>🎧 CD 키링 교환 부스</h1>
+        <div class="bar" id="login-bar">
+            <input type="password" id="token" placeholder="ADMIN_TOKEN">
+            <button class="btn primary" onclick="login()">접속</button>
+        </div>
+        <div class="bar" id="tools" hidden>
+            <input type="text" id="search" placeholder="번호 검색" inputmode="numeric" oninput="render()">
+            <label><input type="checkbox" id="only-unprinted" checked onchange="render()"> 인쇄 안 한 것만</label>
+            <button class="btn ghost" onclick="printPoster()"><i class="fa-solid fa-qrcode"></i> 입장 QR 포스터</button>
+        </div>
+    </header>
+    <div id="list" class="list"><p class="msg">운영자 토큰을 입력하세요.</p></div>
+</div>
+
+<!-- 키링 속지 (style.css의 인쇄 규격 사용) -->
+<div id="print-ticket">
+    <div class="cd-keychain-insert">
+        <div class="cd-cover-box">
+            <img id="print-cover" src="" alt="">
+            <span class="cd-cover-title" id="print-title"></span>
+        </div>
+        <div class="cd-info-box">
+            <div class="cd-title-area">
+                <span class="brand-tag" id="print-nickname"></span>
+                <span class="cd-credit" id="print-credit"></span>
+            </div>
+            <div class="cd-qr-area">
+                <div id="print-qrcode"></div>
+                <span class="qr-label">SCAN TO LISTEN</span>
+            </div>
+        </div>
+        <div class="cut-guide-label">✂️ CD 키링 규격 (49 x 37 mm) 절단선</div>
+    </div>
+</div>
+
+<!-- 입장 QR 포스터 (A4) -->
+<div id="print-poster">
+    <div class="poster-kicker">춘천 관광 · 미식 AI 음악 체험</div>
+    <div class="poster-title">오늘의 춘천을<br>노래로 남겨요</div>
+    <div class="poster-sub">휴대폰 카메라로 QR을 스캔하세요</div>
+    <div id="poster-qr"></div>
+    <div class="poster-steps">
+        <div><b>1</b>다녀온 장소, 맛본 음식,<br>그 순간을 고르면</div>
+        <div><b>2</b>AI가 1~3분 만에<br>나만의 노래를 만들고</div>
+        <div><b>3</b>부스에서 교환 번호로<br>CD 키링을 받아요</div>
+    </div>
+    <div class="poster-code" id="poster-code"></div>
+</div>
+
+<script src="/options.js"></script>
+<script>
+    const { OPTIONS } = window.ChuncheonMusic;
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const statusText = { queued: '대기 중', generating: '만드는 중', completed: '완성', failed: '실패' };
+    let token = '';
+    let songs = [];
+    let baseUrl = location.origin;
+    let timer = null;
+
+    try { token = sessionStorage.getItem('adminToken') || ''; } catch (e) {}
+    if (token) { $('token').value = token; login(); }
+
+    async function api(path, opts = {}) {
+        const res = await fetch(path, { ...opts, headers: { 'X-Admin-Token': token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+        if (res.status === 401) throw new Error('unauthorized');
+        return res.json();
+    }
+
+    async function login() {
+        token = $('token').value.trim();
+        try { sessionStorage.setItem('adminToken', token); } catch (e) {}
+        try {
+            const cfg = await (await fetch('/api/config')).json();
+            if (cfg.publicBaseUrl) baseUrl = cfg.publicBaseUrl;
+            await refresh();
+            $('login-bar').hidden = true;
+            $('tools').hidden = false;
+            $('search').focus();
+        } catch (e) {
+            $('list').innerHTML = '<p class="msg">토큰이 올바르지 않습니다.</p>';
+        }
+    }
+
+    async function refresh() {
+        clearTimeout(timer);
+        try {
+            const data = await api('/api/booth/songs?limit=200');
+            songs = data.songs || [];
+            render();
+        } finally {
+            timer = setTimeout(() => refresh().catch(() => {}), 5000);
+        }
+    }
+
+    function describe(s) {
+        const place = OPTIONS.places.find(p => p.id === s.placeId);
+        const food = OPTIONS.foods.find(f => f.id === s.foodId);
+        const moment = OPTIONS.moments.find(m => m.id === s.momentId);
+        return { image: place ? place.image : 'assets/gongjicheon_1785911982114.jpg', credit: [place?.name, food?.name, moment?.name].filter(Boolean).join(' · ') };
+    }
+
+    function render() {
+        const q = $('search').value.trim();
+        const onlyUnprinted = $('only-unprinted').checked;
+        const list = songs.filter(s => (q ? String(s.ticketNo) === q : true) && (q || !onlyUnprinted || !s.printed));
+        if (!list.length) {
+            $('list').innerHTML = `<p class="msg">${q ? `${esc(q)}번 노래가 없어요.` : '교환을 기다리는 노래가 없어요.'}</p>`;
+            return;
+        }
+        $('list').innerHTML = list.map(s => `
+            <div class="item ${s.printed ? 'printed' : ''}">
+                <div class="row"><span class="no">No. ${s.ticketNo}</span>
+                    <span class="badge ${s.status}">${statusText[s.status] || s.status}</span></div>
+                <div class="title">${esc(s.title)}</div>
+                <div class="meta">${esc(s.nickname)} · ${esc(describe(s).credit)}</div>
+                <div class="meta">${new Date(s.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}${s.source === 'kiosk' ? ' · 키오스크' : ''}${s.printed ? ' · 인쇄함' : ''}</div>
+                <div class="row">
+                    <button class="btn ${s.printed ? 'ghost' : 'primary'}" style="flex:1" onclick="printTicket('${s.id}')">
+                        <i class="fa-solid fa-print"></i> ${s.printed ? '다시 인쇄' : '키링 인쇄'}</button>
+                    <a class="btn ghost" href="/s/${s.id}" target="_blank" title="노래 열기"><i class="fa-solid fa-play"></i></a>
+                </div>
+            </div>`).join('');
+    }
+
+    function drawQr(el, text, px) {
+        el.innerHTML = '';
+        new QRCode(el, { text, width: px, height: px, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+    }
+
+    function printTicket(id) {
+        const s = songs.find(x => x.id === id);
+        if (!s) return;
+        const d = describe(s);
+        document.body.classList.remove('poster-mode');
+        $('print-cover').src = '/' + d.image;
+        $('print-title').textContent = s.title;
+        $('print-nickname').textContent = s.nickname || 'CHUNCHEON';
+        $('print-credit').textContent = d.credit;
+        drawQr($('print-qrcode'), `${baseUrl}/s/${s.id}`, 240);
+        const go = () => setTimeout(async () => {
+            window.print();
+            await api(`/api/booth/${s.id}/printed`, { method: 'POST' }).catch(() => {});
+            $('search').value = '';
+            refresh();
+            $('search').focus();
+        }, 200);
+        const img = $('print-cover');
+        if (img.complete && img.src) go(); else img.onload = go;
+    }
+
+    async function printPoster() {
+        const data = await api('/api/booth/entry');
+        drawQr($('poster-qr'), data.entryUrl, 600);
+        const code = new URL(data.entryUrl).searchParams.get('code');
+        $('poster-code').textContent = code ? `QR이 안 열리면 ${data.entryUrl.split('?')[0]} 접속 후 참여 코드 ${code} 입력` : data.entryUrl;
+        document.body.classList.add('poster-mode');
+        setTimeout(() => { window.print(); document.body.classList.remove('poster-mode'); }, 300);
+    }
+
+    // 번호 입력 후 Enter → 한 건이면 바로 인쇄
+    $('search').addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        const hit = songs.filter(s => String(s.ticketNo) === $('search').value.trim());
+        if (hit.length === 1) printTicket(hit[0].id);
+    });
+</script>
+</body>
+</html>

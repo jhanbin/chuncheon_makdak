@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>춘천을 노래하다 — 관광·미식 음악 체험</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;600;700&family=Noto+Serif+KR:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+    <script src="/vendor/qrcode.min.js"></script>
+</head>
+<body>
+    <div id="bg-container"></div>
+    <div class="overlay"></div>
+
+    <main class="glass-panel" id="app-container">
+        <header class="top-nav">
+            <div class="nav-brand" onclick="resetApp()"><i class="fa-solid fa-music"></i> 춘천을 노래하다</div>
+            <div class="nav-actions">
+                <button class="nav-history-btn" onclick="openMyAlbum()"><i class="fa-solid fa-user"></i> 내 앨범</button>
+                <button class="nav-history-btn" onclick="openHistory()"><i class="fa-solid fa-clock-rotate-left"></i> 보관함</button>
+            </div>
+        </header>
+
+        <!-- Step 0: 시작 -->
+        <section id="step-intro" class="step active">
+            <h1>오늘의 춘천을<br>노래로 남겨요</h1>
+            <p>다녀온 곳, 맛본 음식, 그 순간의 기분.<br>세 가지만 고르면 나만의 노래가 완성됩니다.</p>
+            <div class="input-wrapper">
+                <input type="text" id="user-nickname" placeholder="닉네임 (예: 춘천이)" maxlength="10" autocomplete="off">
+            </div>
+            <div class="input-wrapper">
+                <input type="tel" id="user-pin" placeholder="연락처 뒤 4자리 (선택)" maxlength="4" inputmode="numeric" pattern="\d{4}" autocomplete="off">
+            </div>
+            <p class="hint">4자리를 입력하면 <b>내 앨범</b>에서 만든 노래를 모아 볼 수 있어요.</p>
+            <div class="code-gate" id="code-gate" hidden>
+                <i class="fa-solid fa-qrcode"></i>
+                <b>행사장에 있는 QR 코드를 스캔해서 들어와 주세요</b>
+                <span>또는 안내판의 참여 코드를 입력하세요.</span>
+                <div class="album-lookup">
+                    <input type="text" id="code-input" placeholder="참여 코드" maxlength="32" autocomplete="off">
+                    <button class="primary-btn" onclick="submitCode()">확인</button>
+                </div>
+            </div>
+            <p class="error-text" id="intro-error"></p>
+            <div class="button-group">
+                <button class="primary-btn" onclick="startFlow()">시작하기</button>
+            </div>
+        </section>
+
+        <!-- 보관함 -->
+        <section id="step-history" class="step">
+            <h2>모두의 춘천 노래</h2>
+            <p class="step-desc">다른 관람객이 만든 노래를 들어보세요.</p>
+            <div class="card-grid list" id="history-grid"></div>
+            <div class="button-group mt-2">
+                <button class="primary-btn" onclick="nextStep(0)">메인으로</button>
+            </div>
+        </section>
+
+        <!-- 내 앨범 -->
+        <section id="step-myalbum" class="step">
+            <h2>내 앨범</h2>
+            <p class="step-desc">이 휴대폰에서 만든 노래가 자동으로 보여요.<br>다른 기기라면 닉네임과 연락처 뒤 4자리로 찾을 수 있어요.</p>
+            <div class="album-lookup">
+                <input type="text" id="lookup-nickname" placeholder="닉네임" maxlength="10" autocomplete="off">
+                <input type="tel" id="lookup-pin" placeholder="4자리" maxlength="4" inputmode="numeric" autocomplete="off">
+                <button class="primary-btn" onclick="lookupMyAlbum()">찾기</button>
+            </div>
+            <div class="card-grid list" id="myalbum-grid"></div>
+            <div class="button-group mt-2">
+                <button class="primary-btn" onclick="nextStep(0)">메인으로</button>
+            </div>
+        </section>
+
+        <!-- Step 1: 장소 -->
+        <section id="step-1" class="step">
+            <div class="step-badge">STEP 1 / 3 · 장소</div>
+            <h2>오늘 춘천 어디에 다녀왔나요?</h2>
+            <p class="step-desc">노래의 첫 소절과 앨범 커버가 됩니다.</p>
+            <div class="card-grid grid-3" id="place-grid"></div>
+            <div class="button-group mt-2">
+                <button class="secondary-btn" onclick="nextStep(0)">이전</button>
+                <button class="primary-btn" onclick="nextStep(2)" id="btn-step-1" disabled>다음으로</button>
+            </div>
+        </section>
+
+        <!-- Step 2: 미식 -->
+        <section id="step-2" class="step">
+            <div class="step-badge">STEP 2 / 3 · 미식</div>
+            <h2>무엇을 맛봤나요?</h2>
+            <p class="step-desc">음식의 맛이 노래의 장르와 리듬이 됩니다.</p>
+            <div class="card-grid grid-3" id="food-grid"></div>
+            <div class="button-group mt-2">
+                <button class="secondary-btn" onclick="nextStep(1)">이전</button>
+                <button class="primary-btn" onclick="nextStep(3)" id="btn-step-2" disabled>다음으로</button>
+            </div>
+        </section>
+
+        <!-- Step 3: 순간 -->
+        <section id="step-3" class="step">
+            <div class="step-badge">STEP 3 / 3 · 순간</div>
+            <h2>누구와, 어떤 순간이었나요?</h2>
+            <p class="step-desc">노래의 분위기와 후렴이 됩니다.</p>
+            <div class="card-grid grid-3" id="moment-grid"></div>
+            <div class="button-group mt-2">
+                <button class="secondary-btn" onclick="nextStep(2)">이전</button>
+                <button class="primary-btn" onclick="startGeneration()" id="btn-step-3" disabled>노래 만들기</button>
+            </div>
+        </section>
+
+        <!-- Step 4: 생성 대기 -->
+        <section id="step-4" class="step">
+            <h2 id="wait-title">노래를 만들고 있어요</h2>
+            <div class="combo-chips" id="wait-chips"></div>
+            <div class="equalizer" id="wait-eq">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </div>
+            <p class="step-desc mt-2" id="wait-status">춘천의 풍경과 맛을 음악으로 엮는 중입니다. 보통 1~3분 걸려요.</p>
+            <div class="wait-card" id="wait-print-card">
+                <i class="fa-solid fa-compact-disc"></i>
+                <div>
+                    <b>기다리는 동안 CD 키링을 먼저 만들어요</b>
+                    <span>QR은 노래가 완성되면 자동으로 연결됩니다.</span>
+                </div>
+                <button class="primary-btn" onclick="printTicket()"><i class="fa-solid fa-print"></i> 인쇄</button>
+            </div>
+            <div class="pickup-card" id="wait-pickup-card" hidden>
+                <span class="pickup-label">CD 키링 교환 번호</span>
+                <b class="pickup-no" id="wait-pickup-no">No. 0</b>
+                <span>부스 스태프에게 이 번호를 보여주세요.<br>노래가 완성되지 않아도 키링을 먼저 받을 수 있어요.</span>
+            </div>
+            <div class="button-group mt-2" id="wait-actions" hidden>
+                <button class="secondary-btn" onclick="resetApp()">처음으로</button>
+                <button class="primary-btn" onclick="retryGeneration()"><i class="fa-solid fa-rotate-right"></i> 다시 시도</button>
+            </div>
+        </section>
+
+        <!-- Step 5: 플레이어 -->
+        <section id="step-5" class="step">
+            <div class="player-wrapper">
+                <div class="player-header">
+                    <span>Now Playing</span>
+                    <span class="demo-badge" id="demo-badge" hidden>데모 음원</span>
+                </div>
+                <div class="album-cover" id="album-cover"></div>
+                <div class="song-info">
+                    <h2 id="song-title">Song Title</h2>
+                    <p id="artist-name">춘천을 노래하다</p>
+                </div>
+                <div class="combo-chips left" id="player-chips"></div>
+
+                <div class="version-toggle" id="version-toggle" hidden></div>
+
+                <div class="progress-container">
+                    <span class="time" id="current-time">0:00</span>
+                    <div class="progress-bar-bg" onclick="seek(event)">
+                        <div class="progress-bar-fill" id="progress-bar"></div>
+                    </div>
+                    <span class="time" id="total-time">0:00</span>
+                </div>
+                <div class="controls">
+                    <button class="icon-btn" onclick="skip(-10)" aria-label="10초 뒤로"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button class="icon-btn play-btn" onclick="togglePlay()" id="play-btn" aria-label="재생"><i class="fa-solid fa-play"></i></button>
+                    <button class="icon-btn" onclick="skip(10)" aria-label="10초 앞으로"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+
+                <details class="lyrics-container">
+                    <summary>가사 보기</summary>
+                    <div id="lyrics-body"></div>
+                </details>
+
+                <div class="qr-section" id="player-qr">
+                    <div id="qrcode"></div>
+                    <span>스마트폰으로 스캔해서 다시 듣기</span>
+                </div>
+                <div class="pickup-card compact" id="player-pickup-card" hidden>
+                    <span class="pickup-label">CD 키링 교환 번호</span>
+                    <b class="pickup-no" id="player-pickup-no">No. 0</b>
+                    <span>부스에서 이 번호를 보여주면 키링을 받을 수 있어요.</span>
+                </div>
+            </div>
+
+            <div class="button-group mt-2">
+                <button class="secondary-btn" onclick="resetApp()" id="reset-btn">다시 만들기</button>
+                <button class="secondary-btn" id="player-print-btn" onclick="printTicket()"><i class="fa-solid fa-print"></i> 키링 인쇄</button>
+                <button class="primary-btn" onclick="downloadSong()"><i class="fa-solid fa-download"></i> 저장</button>
+                <button class="primary-btn" onclick="shareSong()"><i class="fa-solid fa-share-nodes"></i> 공유</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- 인쇄용 CD 키링 속지 (49 x 37 mm) -->
+    <div id="print-ticket">
+        <div class="cd-keychain-insert">
+            <div class="cd-cover-box">
+                <img id="print-cover" src="" alt="Album Cover">
+                <span class="cd-cover-title" id="print-title">곡 제목</span>
+            </div>
+            <div class="cd-info-box">
+                <div class="cd-title-area">
+                    <span class="brand-tag" id="print-nickname">CHUNCHEON</span>
+                    <span class="cd-credit" id="print-credit"></span>
+                </div>
+                <div class="cd-qr-area">
+                    <div id="print-qrcode"></div>
+                    <span class="qr-label">SCAN TO LISTEN</span>
+                </div>
+            </div>
+            <div class="cut-guide-label">✂️ CD 키링 규격 (49 x 37 mm) 절단선</div>
+        </div>
+    </div>
+
+    <script src="/options.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

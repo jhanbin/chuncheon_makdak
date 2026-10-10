@@ -1,0 +1,33 @@
+# Render Blueprint — Render 대시보드 > New > Blueprint 에서 이 저장소를 고르면 아래 설정대로 만들어집니다.
+services:
+  - type: web
+    name: chuncheon-music
+    runtime: node
+    region: singapore          # 한국에서 가장 가까운 리전
+    plan: starter              # 영구 디스크는 유료 인스턴스에서만 붙일 수 있음
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/config
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1                # 곡 1개(mp3 2개) 약 5~8MB → 1GB에 약 150곡. 행사 규모에 맞게 늘리세요 (줄일 수는 없음)
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: SUNO_API_KEY
+        sync: false            # 생성 시 대시보드에서 직접 입력
+      - key: EVENT_CODE
+        sync: false            # 입장 QR용 참여 코드 (예: CHUNCHEON26)
+      - key: ADMIN_TOKEN
+        generateValue: true    # 자동 생성 → 대시보드 Environment에서 확인
+      - key: PIN_SALT
+        generateValue: true
+      - key: SUNO_MODEL_VERSION
+        value: V5
+      - key: LIMIT_PER_DEVICE
+        value: "3"
+      - key: DAILY_LIMIT
+        value: "500"
+      - key: MAX_CONCURRENT
+        value: "3"
