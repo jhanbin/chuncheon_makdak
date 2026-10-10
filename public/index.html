@@ -192,28 +192,11 @@
         </section>
     </main>
 
-    <!-- 인쇄용 CD 키링 속지 (49 x 37 mm) -->
-    <div id="print-ticket">
-        <div class="cd-keychain-insert">
-            <div class="cd-cover-box">
-                <img id="print-cover" src="" alt="Album Cover">
-                <span class="cd-cover-title" id="print-title">곡 제목</span>
-            </div>
-            <div class="cd-info-box">
-                <div class="cd-title-area">
-                    <span class="brand-tag" id="print-nickname">CHUNCHEON</span>
-                    <span class="cd-credit" id="print-credit"></span>
-                </div>
-                <div class="cd-qr-area">
-                    <div id="print-qrcode"></div>
-                    <span class="qr-label">SCAN TO LISTEN</span>
-                </div>
-            </div>
-            <div class="cut-guide-label">✂️ CD 키링 규격 (49 x 37 mm) 절단선</div>
-        </div>
-    </div>
+    <!-- 인쇄용 CD 키링: 앞면 커버 41x40mm + 뒷면 속지 49x37mm (keyring.js가 채움) -->
+    <div id="print-ticket"></div>
 
     <script src="/options.js"></script>
+    <script src="/keyring.js"></script>
     <script src="/app.js"></script>
 </body>
 </html>

@@ -440,19 +440,18 @@ async function shareSong() {
     }
 }
 
-// CD 키링 속지 인쇄 (49 x 37 mm) — 노래가 완성되기 전에도 인쇄 가능
+// CD 키링 인쇄 (앞면 커버 41x40mm + 뒷면 속지 49x37mm) — 노래가 완성되기 전에도 인쇄 가능
 function printTicket() {
     if (!currentSong) return alert('출력할 노래 정보가 없습니다.');
     const d = describe(currentSong);
-    $('print-cover').src = '/' + d.image;
-    $('print-title').textContent = d.title;
-    $('print-nickname').textContent = currentSong.nickname || 'CHUNCHEON';
-    $('print-credit').textContent = [d.placeName, d.foodName, d.momentName].filter(Boolean).join(' · ');
-    drawQr($('print-qrcode'), songUrl(currentSong.id), 240);
-
-    const img = $('print-cover');
-    const go = () => setTimeout(() => window.print(), 200);
-    if (img.complete) go(); else img.onload = go;
+    Keyring.print({
+        image: '/' + d.image,
+        title: d.title,
+        nickname: currentSong.nickname,
+        place: d.placeName, food: d.foodName, moment: d.momentName,
+        ticketNo: currentSong.ticketNo,
+        url: songUrl(currentSong.id)
+    });
 }
 
 // ───────────────────────── 초기화 ─────────────────────────

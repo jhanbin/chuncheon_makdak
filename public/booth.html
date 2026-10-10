@@ -72,26 +72,8 @@
     <div id="list" class="list"><p class="msg">운영자 토큰을 입력하세요.</p></div>
 </div>
 
-<!-- 키링 속지 (style.css의 인쇄 규격 사용) -->
-<div id="print-ticket">
-    <div class="cd-keychain-insert">
-        <div class="cd-cover-box">
-            <img id="print-cover" src="" alt="">
-            <span class="cd-cover-title" id="print-title"></span>
-        </div>
-        <div class="cd-info-box">
-            <div class="cd-title-area">
-                <span class="brand-tag" id="print-nickname"></span>
-                <span class="cd-credit" id="print-credit"></span>
-            </div>
-            <div class="cd-qr-area">
-                <div id="print-qrcode"></div>
-                <span class="qr-label">SCAN TO LISTEN</span>
-            </div>
-        </div>
-        <div class="cut-guide-label">✂️ CD 키링 규격 (49 x 37 mm) 절단선</div>
-    </div>
-</div>
+<!-- CD 키링: 앞면 커버 + 뒷면 속지 (keyring.js가 채움) -->
+<div id="print-ticket"></div>
 
 <!-- 입장 QR 포스터 (A4) -->
 <div id="print-poster">
@@ -108,6 +90,7 @@
 </div>
 
 <script src="/options.js"></script>
+<script src="/keyring.js"></script>
 <script>
     const { OPTIONS } = window.ChuncheonMusic;
     const $ = id => document.getElementById(id);
@@ -188,25 +171,25 @@
         new QRCode(el, { text, width: px, height: px, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
     }
 
-    function printTicket(id) {
+    async function printTicket(id) {
         const s = songs.find(x => x.id === id);
         if (!s) return;
-        const d = describe(s);
+        const place = OPTIONS.places.find(p => p.id === s.placeId);
+        const food = OPTIONS.foods.find(f => f.id === s.foodId);
+        const moment = OPTIONS.moments.find(m => m.id === s.momentId);
         document.body.classList.remove('poster-mode');
-        $('print-cover').src = '/' + d.image;
-        $('print-title').textContent = s.title;
-        $('print-nickname').textContent = s.nickname || 'CHUNCHEON';
-        $('print-credit').textContent = d.credit;
-        drawQr($('print-qrcode'), `${baseUrl}/s/${s.id}`, 240);
-        const go = () => setTimeout(async () => {
-            window.print();
-            await api(`/api/booth/${s.id}/printed`, { method: 'POST' }).catch(() => {});
-            $('search').value = '';
-            refresh();
-            $('search').focus();
-        }, 200);
-        const img = $('print-cover');
-        if (img.complete && img.src) go(); else img.onload = go;
+        await Keyring.print({
+            image: '/' + describe(s).image,
+            title: s.title,
+            nickname: s.nickname,
+            place: place?.name, food: food?.name, moment: moment?.name,
+            ticketNo: s.ticketNo,
+            url: `${baseUrl}/s/${s.id}`
+        });
+        await api(`/api/booth/${s.id}/printed`, { method: 'POST' }).catch(() => {});
+        $('search').value = '';
+        refresh();
+        $('search').focus();
     }
 
     async function printPoster() {

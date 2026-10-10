@@ -567,42 +567,100 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
 .pickup-card.compact { margin-top: 12px; padding: 12px; }
 .pickup-card.compact .pickup-no { font-size: 2rem; }
 
-/* Printable Ticket Styles */
-#print-ticket {
-    display: none;
-}
+/* ───────── CD 키링 인쇄 ─────────
+ * 앞면 커버 41 x 40 mm + 뒷면 속지 49 x 37 mm 를 한 장에 나란히 인쇄.
+ * 크기를 바꿀 때는 .cd-front-cover / .cd-keychain-insert 의 width·height만 고치면 됩니다.
+ * 인쇄 창에서 배율은 반드시 "100%(실제 크기)", 여백 "없음/기본" 으로 인쇄하세요.
+ */
+#print-ticket { display: none; }
 
 @media print {
-    body * {
-        visibility: hidden;
-    }
-    #print-ticket, #print-ticket * {
-        visibility: visible;
-    }
+    @page { margin: 8mm; }
+    /* 화면용 검은 배경이 인쇄되지 않도록 (잉크 낭비 방지) */
+    html, body { background: #fff !important; }
+    #bg-container, .overlay { display: none !important; }
+    body * { visibility: hidden; }
+    #print-ticket, #print-ticket * { visibility: visible; }
     #print-ticket {
-        display: block !important;
+        display: flex !important;
+        align-items: flex-start;
+        gap: 8mm;
         position: fixed;
-        left: 10mm;
-        top: 10mm;
+        left: 0;
+        top: 0;
         color: #000;
         background: #fff;
         z-index: 99999;
+        font-family: 'Noto Sans KR', sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
+    .print-piece { display: flex; flex-direction: column; gap: 1.5mm; }
+    /* 절단선: 크기에 영향을 주지 않도록 outline 사용 */
+    .cd-front-cover, .cd-keychain-insert { outline: 0.25mm dashed #777; outline-offset: 0; }
+    .cut-guide-label { font-size: 5.5pt; color: #777; white-space: nowrap; }
+
+    /* ① 앞면 커버 41 x 40 mm */
+    .cd-front-cover {
+        width: 41mm;
+        height: 40mm;
+        position: relative;
+        overflow: hidden;
+        background: #222;
+        color: #fff;
+    }
+    .cd-front-cover .front-img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .cd-front-cover::after {      /* 글자가 잘 보이도록 위·아래 어둡게 */
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.82) 100%);
+    }
+    .front-top, .front-bottom { position: absolute; left: 2.2mm; right: 2.2mm; z-index: 1; text-shadow: 0 0 0.6mm rgba(0,0,0,0.7); }
+    .front-top {
+        top: 1.8mm;
+        display: flex;
+        justify-content: space-between;
+        font-size: 4.6pt;
+        font-weight: 700;
+        letter-spacing: 0.5pt;
+    }
+    .front-top span:first-child { color: #1DB954; }
+    .front-bottom { bottom: 2.2mm; display: flex; flex-direction: column; gap: 0.6mm; }
+    .front-kicker {
+        font-size: 4.4pt;
+        color: #1DB954;
+        font-weight: 700;
+        word-break: keep-all;
+    }
+    .front-title {
+        font-size: 9.5pt;
+        line-height: 1.15;
+        font-weight: 700;
+        word-break: keep-all;
+        border-top: 0.3mm solid rgba(255,255,255,0.7);
+        padding-top: 1mm;
+    }
+    .front-artist { font-size: 5pt; color: #ddd; }
+
+    /* ② 뒷면 속지 49 x 37 mm */
     .cd-keychain-insert {
         width: 49mm;
         height: 37mm;
-        max-width: 49mm;
-        max-height: 37mm;
         overflow: hidden;
-        border: 1px dashed #333;
         box-sizing: border-box;
         padding: 2mm;
         display: flex;
         gap: 2mm;
         align-items: center;
-        background: #ffffff;
+        background: #fff;
         position: relative;
-        font-family: 'Noto Sans KR', sans-serif;
     }
     .cd-cover-box {
         width: 25mm;
@@ -610,15 +668,9 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
         flex-shrink: 0;
         border-radius: 1.5mm;
         overflow: hidden;
-        border: 0.5pt solid #eee;
         position: relative;
     }
-    .cd-cover-box img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    /* 곡 제목은 커버 하단에 얹어 오른쪽 칸을 QR에 양보 */
+    .cd-cover-box img { width: 100%; height: 100%; object-fit: cover; }
     .cd-cover-title {
         position: absolute;
         left: 0; right: 0; bottom: 0;
@@ -630,8 +682,6 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
         text-align: center;
         word-break: keep-all;
         background: linear-gradient(transparent, rgba(0,0,0,0.75));
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
     }
     .cd-info-box {
         flex: 1;
@@ -652,8 +702,6 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
     }
     .cd-credit {
         display: block;
@@ -665,28 +713,8 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
         max-height: 7mm;
         overflow: hidden;
     }
-    .cd-qr-area {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
+    .cd-qr-area { display: flex; flex-direction: column; align-items: center; }
     /* QR은 240px로 그린 뒤 14mm로 축소 → 인쇄 선명도 확보 */
-    #print-qrcode img, #print-qrcode canvas {
-        width: 14mm !important;
-        height: 14mm !important;
-    }
-    .qr-label {
-        font-size: 3.5pt;
-        color: #555;
-        font-weight: bold;
-        margin-top: 0.5mm;
-    }
-    .cut-guide-label {
-        position: absolute;
-        bottom: -4mm;
-        left: 0;
-        font-size: 5.5pt;
-        color: #777;
-        white-space: nowrap;
-    }
+    .print-qrcode img, .print-qrcode canvas { width: 14mm !important; height: 14mm !important; }
+    .qr-label { font-size: 3.5pt; color: #555; font-weight: bold; margin-top: 0.5mm; }
 }
