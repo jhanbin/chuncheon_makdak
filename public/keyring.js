@@ -2,7 +2,7 @@
  * CD 키링 인쇄 — 키오스크 화면(index.html)과 부스 화면(booth.html)이 함께 사용
  *
  * 한 장에 두 조각을 나란히 인쇄합니다.
- *   ① 앞면 커버  41 x 40 mm — 장소 사진 + 곡 제목 + 아티스트 (앨범 커버)
+ *   ① 앞면 커버  40 x 41 mm (가로 x 세로) — 장소 사진 + 곡 제목 + 아티스트 (앨범 커버)
  *   ② 뒷면 속지  49 x 37 mm — 크레딧 + 다시 듣기 QR
  *
  * 크기를 바꿀 때는 style.css 맨 아래 "CD 키링 인쇄" 부분의 mm 값만 고치면 됩니다.
@@ -37,7 +37,7 @@
                         <span class="front-artist">by ${esc(info.nickname || '익명 관람객')}</span>
                     </div>
                 </div>
-                <div class="cut-guide-label">✂ 앞면 커버 41 x 40 mm</div>
+                <div class="cut-guide-label">✂ 앞면 커버 40 x 41 mm</div>
             </div>
             <div class="print-piece">
                 <div class="cd-keychain-insert">
