@@ -570,7 +570,8 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
 /* ───────── CD 키링 인쇄 ─────────
  * 앞면 커버 40 x 41 mm (가로 x 세로) + 뒷면 속지 49 x 37 mm 를 한 장에 나란히 인쇄.
  * 크기를 바꿀 때는 .cd-front-cover / .cd-keychain-insert 의 width·height만 고치면 됩니다.
- * 인쇄 창에서 배율은 반드시 "100%(실제 크기)", 여백 "없음/기본" 으로 인쇄하세요.
+ * 용지 가운데에 자동 배치. 용지가 좁으면(100mm 폭 등) 위아래로 쌓임. 최소 100 x 150 mm 용지 필요.
+ * 인쇄 창에서 배율은 반드시 "100%(실제 크기)", 배경 그래픽 켜기.
  */
 #print-ticket { display: none; }
 
@@ -581,13 +582,18 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
     #bg-container, .overlay { display: none !important; }
     body * { visibility: hidden; }
     #print-ticket, #print-ticket * { visibility: visible; }
+    /* 화면용 요소는 인쇄에서 아예 빼서 빈 페이지가 생기지 않게 함 */
+    body > *:not(#print-ticket) { display: none !important; }
+    /* 키링을 용지 정가운데에 배치 (프린터 가장자리 인쇄 불가 영역에 잘리지 않도록) */
     #print-ticket {
         display: flex !important;
-        align-items: flex-start;
+        flex-wrap: wrap;            /* 용지가 좁으면 위아래로 쌓음 */
+        justify-content: center;
+        align-items: center;
+        align-content: center;
         gap: 8mm;
         position: fixed;
-        left: 0;
-        top: 0;
+        inset: 0;
         color: #000;
         background: #fff;
         z-index: 99999;
@@ -595,7 +601,7 @@ details.lyrics-container summary { font-size: 0.85rem; color: var(--text-dark); 
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    .print-piece { display: flex; flex-direction: column; gap: 1.5mm; }
+    .print-piece { display: flex; flex-direction: column; gap: 1.5mm; flex-shrink: 0; }  /* 절대 줄어들지 않게 (실제 크기 유지) */
     /* 절단선: 크기에 영향을 주지 않도록 outline 사용 */
     .cd-front-cover, .cd-keychain-insert { outline: 0.25mm dashed #777; outline-offset: 0; }
     .cut-guide-label { font-size: 5.5pt; color: #777; white-space: nowrap; }
