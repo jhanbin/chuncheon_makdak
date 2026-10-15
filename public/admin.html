@@ -36,6 +36,13 @@
         .table-wrap { overflow-x: auto; }
         .msg { color: var(--muted); padding: 40px 0; text-align: center; }
         ol { padding-left: 20px; font-size: 0.85rem; } ol li { margin: 5px 0; }
+        .ai-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--panel); }
+        .ai-bar.bad { border-color: var(--bad); background: rgba(255,107,107,.08); }
+        .ai-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+        .ai-bar.bad .dot { background: var(--bad); }
+        .ai-bar .txt { flex: 1; min-width: 220px; font-size: 0.9rem; }
+        .ai-bar .txt small { display: block; color: var(--muted); margin-top: 3px; word-break: break-all; }
+        .err { color: var(--bad); font-size: 0.75rem; display: block; margin-top: 2px; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -72,7 +79,18 @@
         if (res.status === 401) { $('content').innerHTML = '<p class="msg">토큰이 올바르지 않습니다.</p>'; return; }
         const s = await res.json();
         const st = s.status || {};
+        const ai = s.ai || { state: 'ok' };
+        const aiBad = ai.state !== 'ok';
         $('content').innerHTML = `
+            <div class="ai-bar ${aiBad ? 'bad' : ''}">
+                <span class="dot"></span>
+                <div class="txt"><b>${aiBad ? '노래 생성이 멈춰 있습니다' : 'AI 노래 생성 정상'}</b>
+                    ${aiBad ? `<small>${esc(ai.message)}${ai.since ? ' · ' + new Date(ai.since).toLocaleString('ko-KR') + '부터' : ''}</small><small>${esc(ai.detail || '')}</small>` : `<small>대기열 ${s.queueLength}곡 · 동시 생성 ${s.active}곡</small>`}
+                    <small id="ai-check-result"></small>
+                </div>
+                <button class="btn ghost" onclick="aiCheck()">AI 연결·크레딧 확인</button>
+                ${s.failed ? `<button onclick="retryFailed(${s.failed})">실패한 ${s.failed}곡 다시 만들기</button>` : ''}
+            </div>
             <div class="kpis">
                 <div class="kpi"><b>${s.total}</b><span>전체 제작 곡</span></div>
                 <div class="kpi"><b>${st.completed || 0}</b><span>완성</span></div>
@@ -98,12 +116,28 @@
                         <td>${new Date(r.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                         <td>${esc(r.nickname)}</td><td>${esc(r.title)}</td>
                         <td>${esc([r.place, r.food, r.moment].join(' · '))}</td>
-                        <td class="st-${r.status}" title="${esc(r.error || '')}">${esc(r.status)}</td>
+                        <td class="st-${r.status}">${esc(r.status)}${r.error ? `<span class="err">${esc(r.error)}</span>` : ''}</td>
                         <td><a href="/s/${r.id}" target="_blank">열기</a></td></tr>`).join('')}
                 </table></div>
             </div>`;
         clearTimeout(timer);
         timer = setTimeout(load, 15000);   // 행사 중 자동 새로고침
+    }
+
+    async function aiCheck() {
+        $('ai-check-result').textContent = '확인 중…';
+        const r = await (await fetch('/api/admin/ai-check', { method: 'POST', headers: { 'X-Admin-Token': $('token').value.trim() } })).json();
+        $('ai-check-result').textContent = !r.ok ? `❌ ${r.error || '연결 실패'}`
+            : (r.credits != null && Number(r.credits) <= 0)
+                ? '⚠️ API 키는 정상이지만 남은 크레딧이 0입니다. apiframe에서 충전하면 1분 안에 자동으로 다시 시작합니다.'
+                : `✅ apiframe 연결 정상${r.credits != null ? ` · 남은 크레딧 ${r.credits}` : ''} — 멈춘 곡이 있으면 지금 다시 시작합니다.`;
+        setTimeout(load, 1500);
+    }
+
+    async function retryFailed(n) {
+        const r = await (await fetch('/api/admin/retry-failed', { method: 'POST', headers: { 'X-Admin-Token': $('token').value.trim() } })).json();
+        $('ai-check-result').textContent = `🔁 ${r.requeued}곡을 다시 만들기 시작했습니다. 이미 받은 키링 QR도 그대로 연결됩니다.`;
+        setTimeout(load, 1500);
     }
 
     async function downloadCsv(e) {

@@ -200,7 +200,7 @@ async function openSong(songId) {
         if (currentSong.status === 'completed') {
             showPlayer();
         } else {
-            showWaiting(data.queuePosition);
+            showWaiting(data.queuePosition, data.aiPaused);
             pollTimer = setTimeout(() => openSong(songId), 4000);
         }
     } catch (err) {
@@ -214,13 +214,15 @@ function stopPolling() {
     pollTimer = null;
 }
 
-function showWaiting(queuePosition) {
+function showWaiting(queuePosition, aiPaused) {
     const d = describe(currentSong);
     const failed = currentSong.status === 'failed';
     $('wait-chips').innerHTML = comboChips(d.placeName, d.foodName, d.momentName);
     $('wait-title').textContent = failed ? '노래를 만들지 못했어요' : `「${d.title}」 만드는 중`;
     $('wait-status').textContent = failed
         ? '일시적인 문제일 수 있어요. 같은 선택으로 다시 시도할 수 있고, 이미 인쇄한 키링 QR도 그대로 쓸 수 있어요.'
+        : aiPaused
+            ? '지금 노래가 몰려 잠시 기다리고 있어요. 이 화면을 닫아도 노래는 자동으로 완성되고, 키링 QR이나 내 앨범에서 들을 수 있어요.'
         : (currentSong.status === 'queued' && queuePosition > 0
             ? `앞에 ${queuePosition - 1}명이 기다리고 있어요. 곧 시작합니다.`
             : '춘천의 풍경과 맛을 음악으로 엮는 중입니다. 보통 1~3분 걸려요.');
