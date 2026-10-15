@@ -23,7 +23,7 @@ const PIN_SALT = process.env.PIN_SALT || 'chuncheon-music';
 // 온라인 공개 시 남용 방지
 const EVENT_CODE = (process.env.EVENT_CODE || '').trim().toUpperCase();   // 입장 QR에 들어가는 코드. 비우면 코드 없이 누구나 참여
 const LIMIT_PER_DEVICE = Number(process.env.LIMIT_PER_DEVICE || 3);      // 기기당 하루 생성 수
-const LIMIT_PER_IP_HOUR = Number(process.env.LIMIT_PER_IP_HOUR || 30);   // 같은 IP(행사장 와이파이 등) 시간당
+const LIMIT_PER_IP_HOUR = Number(process.env.LIMIT_PER_IP_HOUR || 120);  // 같은 IP(행사장 와이파이·LTE는 여러 명이 공유) 시간당
 const DAILY_LIMIT = Number(process.env.DAILY_LIMIT || 500);              // 하루 전체 생성 수 (크레딧 보호)
 // Render 등에서는 영구 디스크 경로(예: /var/data)를 지정해야 재배포 후에도 곡이 남습니다.
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -108,23 +108,86 @@ for (const song of Object.values(songs)) {
 const queue = [];
 let active = 0;
 
-function enqueue(id) {
-    if (!queue.includes(id)) queue.push(id);
+/*
+ * AI(apiframe) 연결 상태.
+ * 크레딧 부족(402)·키 오류·일시 장애가 나면 곡을 "실패"로 버리지 않고 대기열에 그대로 둔 채
+ * 큐를 멈췄다가, 주기적으로 다시 시도해 복구되면 자동으로 이어서 만든다.
+ */
+const aiStatus = { state: 'ok', message: '', since: null, lastCheck: null };
+let pausedUntil = 0;
+const PAUSE_MS = { no_credit: 60e3, bad_key: 120e3, unavailable: 20e3 };
+const AI_MESSAGES = {
+    no_credit: 'apiframe 크레딧이 부족합니다. 충전하면 1분 안에 자동으로 다시 만들기 시작합니다.',
+    bad_key: 'apiframe API 키가 올바르지 않거나 비활성 상태입니다. Render의 SUNO_API_KEY를 확인하세요.',
+    unavailable: 'apiframe 서버가 일시적으로 응답하지 않습니다. 자동으로 다시 시도합니다.'
+};
+
+class PauseError extends Error {
+    constructor(kind, detail) { super(AI_MESSAGES[kind]); this.kind = kind; this.detail = detail; }
+}
+
+function setAiStatus(state, detail) {
+    if (aiStatus.state !== state) {
+        aiStatus.since = new Date().toISOString();
+        console.log(`[AI 상태] ${aiStatus.state} → ${state}${detail ? ' / ' + detail : ''}`);
+    }
+    aiStatus.state = state;
+    aiStatus.message = state === 'ok' ? '' : AI_MESSAGES[state];
+    aiStatus.detail = detail || '';
+    aiStatus.lastCheck = new Date().toISOString();
+}
+
+/** axios 오류 → 멈춤(PauseError) 또는 진짜 실패(Error) */
+function classifyApiError(err) {
+    const code = err.response?.status;
+    const body = err.response?.data;
+    const detail = `${code || err.code || ''} ${typeof body === 'object' ? JSON.stringify(body).slice(0, 200) : String(body || err.message).slice(0, 200)}`.trim();
+    const text = detail.toLowerCase();
+    if (code === 402 || /insufficient|credit|balance|quota/.test(text)) return new PauseError('no_credit', detail);
+    if (code === 401 || code === 403) return new PauseError('bad_key', detail);
+    if (!code || code === 408 || code === 429 || code >= 500) return new PauseError('unavailable', detail);
+    return new Error(`생성 요청 거절 (${detail})`);
+}
+
+function enqueue(id, front = false) {
+    if (queue.includes(id)) return;
+    front ? queue.unshift(id) : queue.push(id);
     pump();
 }
 
 function pump() {
+    if (Date.now() < pausedUntil) return;
     while (active < MAX_CONCURRENT && queue.length) {
         const id = queue.shift();
+        if (!songs[id] || songs[id].status === 'completed') continue;
         active++;
         runJob(id)
             .catch(err => {
+                if (err instanceof PauseError) {
+                    // 곡은 버리지 않고 맨 앞으로 되돌린 뒤 큐를 잠시 멈춤
+                    setAiStatus(err.kind, err.detail);
+                    updateSong(id, { status: 'queued', jobId: null, jobStartedAt: null });
+                    queue.unshift(id);
+                    pausedUntil = Date.now() + PAUSE_MS[err.kind];
+                    console.warn(`[${id}] AI 일시 중단(${err.kind}) — ${Math.round(PAUSE_MS[err.kind] / 1000)}초 뒤 재시도`);
+                    return;
+                }
+                const attempts = (songs[id].attempts || 0) + 1;
+                if (attempts < 2) {   // 수노 쪽 일시 실패는 한 번 자동 재시도
+                    console.warn(`[${id}] 생성 실패, 자동 재시도:`, err.message);
+                    updateSong(id, { status: 'queued', jobId: null, jobStartedAt: null, attempts });
+                    queue.push(id);
+                    return;
+                }
                 console.error(`[${id}] 생성 실패:`, err.message);
-                updateSong(id, { status: 'failed', error: err.message });
+                updateSong(id, { status: 'failed', error: err.message, attempts });
             })
             .finally(() => { active--; pump(); });
     }
 }
+
+// 멈춘 동안에도 주기적으로 깨워서 복구 여부 확인
+setInterval(() => { if (queue.length) pump(); }, 5000);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const apiHeaders = () => ({ 'X-API-Key': API_KEY, 'Content-Type': 'application/json' });
@@ -132,22 +195,28 @@ const apiHeaders = () => ({ 'X-API-Key': API_KEY, 'Content-Type': 'application/j
 async function runJob(id) {
     const song = songs[id];
     if (DEMO_MODE) return runDemoJob(id);
-    if (!API_KEY) throw new Error('SUNO_API_KEY가 설정되지 않았습니다.');
+    if (!API_KEY) throw new PauseError('bad_key', 'SUNO_API_KEY 없음');
 
     let jobId = song.jobId;
     if (!jobId) {
-        const res = await axios.post(`${APIFRAME_BASE_URL}/v2/music/generate`, {
-            model: 'suno',
-            prompt: song.lyrics,
-            sunoParams: {
-                custom_mode: true,           // prompt = 가사 그대로 사용
-                title: song.title,
-                style: song.style,
-                model_version: SUNO_MODEL_VERSION
-            }
-        }, { headers: apiHeaders(), timeout: 20000 });
+        let res;
+        try {
+            res = await axios.post(`${APIFRAME_BASE_URL}/v2/music/generate`, {
+                model: 'suno',
+                prompt: song.lyrics,
+                sunoParams: {
+                    custom_mode: true,           // prompt = 가사 그대로 사용
+                    title: song.title,
+                    style: song.style,
+                    model_version: SUNO_MODEL_VERSION
+                }
+            }, { headers: apiHeaders(), timeout: 20000 });
+        } catch (err) {
+            throw classifyApiError(err);
+        }
         jobId = res.data.id || res.data.jobId || res.data.job_id;
         if (!jobId) throw new Error('작업 ID를 받지 못했습니다: ' + JSON.stringify(res.data).slice(0, 200));
+        setAiStatus('ok');
         updateSong(id, { status: 'generating', jobId, jobStartedAt: new Date().toISOString() });
         console.log(`[${id}] 생성 요청 완료 (job ${jobId})`);
     }
@@ -168,7 +237,10 @@ async function runJob(id) {
 
         const status = String(data.status || '').toUpperCase();
         if (['FAILED', 'ERROR', 'CANCELLED'].includes(status)) {
-            throw new Error(`생성 실패 (${status}): ${JSON.stringify(data.error || data.message || '').slice(0, 200)}`);
+            const reason = typeof data.error === 'string' ? data.error : JSON.stringify(data.error || data.message || '');
+            // 작업 단계에서 크레딧 부족으로 실패한 경우도 멈춤 처리 (apiframe은 실패 작업 크레딧을 환불)
+            if (/insufficient|credit|balance|quota/i.test(reason)) throw new PauseError('no_credit', reason.slice(0, 200));
+            throw new Error(`생성 실패: ${reason.slice(0, 200)}`);
         }
         const tracks = extractTracks(data);
         if ((status === 'COMPLETED' || status === 'SUCCESS' || status === '') && tracks.length) {
@@ -262,23 +334,25 @@ app.use('/media', express.static(AUDIO_DIR, { maxAge: '30d' }));
 const clean = (v, max) => String(v || '').trim().slice(0, max);
 const kstDay = iso => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
 
-// 생성 제한 확인용 기록 (메모리) — 서버 재시작 시 초기화되지만 일일 총량은 저장된 곡으로 계산
-const ipLog = new Map();      // ip → [timestamps]
+// 생성 제한 — 실패한 곡은 세지 않음 (크레딧 부족 등 우리 쪽 문제로 방문객이 막히지 않도록)
+const ipHash = ip => crypto.createHash('sha256').update(`${PIN_SALT}:ip:${ip}`).digest('hex').slice(0, 16);
 
 function checkLimits(req, deviceId, isKiosk) {
     const today = kstDay(new Date().toISOString());
-    const todays = Object.values(songs).filter(s => s.createdAt && kstDay(s.createdAt) === today && !s.legacy);
+    const counted = Object.values(songs).filter(s => !s.legacy && s.status !== 'failed');
+    const todays = counted.filter(s => s.createdAt && kstDay(s.createdAt) === today);
     if (todays.length >= DAILY_LIMIT) return '오늘 준비한 노래가 모두 소진되었어요. 내일 다시 찾아주세요!';
 
     if (!isKiosk && deviceId) {
         const mine = todays.filter(s => s.deviceId === deviceId).length;
         if (mine >= LIMIT_PER_DEVICE) return `노래는 한 사람당 하루 ${LIMIT_PER_DEVICE}곡까지 만들 수 있어요.`;
     }
-    const now = Date.now();
-    const hits = (ipLog.get(req.ip) || []).filter(t => now - t < 3600e3);
-    if (hits.length >= LIMIT_PER_IP_HOUR) return '지금 요청이 많아요. 잠시 후 다시 시도해주세요.';
-    hits.push(now);
-    ipLog.set(req.ip, hits);
+    if (!isKiosk) {
+        const h = ipHash(req.ip);
+        const hourAgo = Date.now() - 3600e3;
+        const recent = counted.filter(s => s.ipHash === h && Date.parse(s.createdAt) > hourAgo).length;
+        if (recent >= LIMIT_PER_IP_HOUR) return '지금 요청이 많아요. 잠시 후 다시 시도해주세요.';
+    }
     return null;
 }
 
@@ -323,7 +397,7 @@ app.post('/api/songs', (req, res) => {
     songs[id] = {
         id, nickname,
         ticketNo: nextTicketNo(),
-        deviceId, source: req.body.kiosk ? 'kiosk' : 'mobile',
+        deviceId, ipHash: ipHash(req.ip), source: req.body.kiosk ? 'kiosk' : 'mobile',
         pinHash: pin ? hashPin(nickname, pin) : null,
         placeId, foodId, momentId,
         place: composed.place.name, food: composed.food.name, moment: composed.moment.name,
@@ -341,7 +415,7 @@ app.post('/api/songs', (req, res) => {
 app.get('/api/song/:id', (req, res) => {
     const song = songs[req.params.id];
     if (!song) return res.status(404).json({ success: false, error: 'Song not found' });
-    res.json({ success: true, song: publicSong(song), queuePosition: queue.indexOf(song.id) + 1 });
+    res.json({ success: true, song: publicSong(song), queuePosition: queue.indexOf(song.id) + 1, aiPaused: aiStatus.state !== 'ok' });
 });
 
 // 3. 두 버전 중 대표곡 선택 (수노는 요청 1번에 2곡 생성)
@@ -357,7 +431,7 @@ app.post('/api/song/:id/select', (req, res) => {
 app.post('/api/song/:id/retry', (req, res) => {
     const song = songs[req.params.id];
     if (!song || song.status !== 'failed') return res.status(400).json({ success: false });
-    updateSong(song.id, { status: 'queued', jobId: null, jobStartedAt: null, error: null });
+    updateSong(song.id, { status: 'queued', jobId: null, jobStartedAt: null, error: null, attempts: 0 });
     enqueue(song.id);
     res.json({ success: true });
 });
@@ -439,9 +513,41 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
         topCombos: Object.entries(combos).sort((a, b) => b[1] - a[1]).slice(0, 10),
         avgGenerationSec: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null,
         queueLength: queue.length, active,
+        ai: { ...aiStatus, pausedForSec: Math.max(0, Math.round((pausedUntil - Date.now()) / 1000)) },
+        failed: all.filter(s => s.status === 'failed').length,
         recent: all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 30)
             .map(s => ({ id: s.id, nickname: s.nickname, title: s.title, place: s.place, food: s.food, moment: s.moment, status: s.status, error: s.error, createdAt: s.createdAt }))
     });
+});
+
+// AI 연결·크레딧 확인 (apiframe 계정 정보 조회 — 크레딧 소모 없음)
+app.post('/api/admin/ai-check', requireAdmin, async (req, res) => {
+    if (DEMO_MODE) return res.json({ success: true, ok: true, message: 'DEMO_MODE' });
+    if (!API_KEY) { setAiStatus('bad_key', 'SUNO_API_KEY 없음'); return res.json({ success: true, ok: false, ai: aiStatus }); }
+    try {
+        const r = await axios.get(`${APIFRAME_BASE_URL}/v2/me`, { headers: apiHeaders(), timeout: 15000 });
+        const d = r.data || {};
+        const credits = d.credits ?? d.balance ?? d.creditBalance ?? d.data?.credits ?? null;
+        // 키는 정상. 크레딧 부족으로 멈춰 있었다면 바로 재개 시도
+        if (aiStatus.state !== 'ok') { pausedUntil = 0; pump(); }
+        res.json({ success: true, ok: true, credits, ai: aiStatus });
+    } catch (err) {
+        const e = classifyApiError(err);
+        if (e instanceof PauseError) setAiStatus(e.kind, e.detail);
+        res.json({ success: true, ok: false, error: e.message, ai: aiStatus });
+    }
+});
+
+// 실패한 곡 전부 다시 만들기 (같은 ID 유지 → 이미 나간 키링 QR도 그대로 살아남)
+app.post('/api/admin/retry-failed', requireAdmin, (req, res) => {
+    const ids = Object.values(songs).filter(s => s.status === 'failed' && !s.legacy).map(s => s.id);
+    for (const id of ids) {
+        updateSong(id, { status: 'queued', jobId: null, jobStartedAt: null, error: null, attempts: 0 });
+        queue.push(id);
+    }
+    pausedUntil = 0;
+    pump();
+    res.json({ success: true, requeued: ids.length });
 });
 
 app.get('/api/admin/export.csv', requireAdmin, (req, res) => {
@@ -464,7 +570,7 @@ app.get('/api/booth/songs', requireAdmin, (req, res) => {
         .sort((a, b) => (b.ticketNo || 0) - (a.ticketNo || 0))
         .slice(0, Math.min(Number(req.query.limit) || 80, 300))
         .map(s => ({ ...publicSong(s), printedAt: s.printedAt || null, source: s.source || null }));
-    res.json({ success: true, songs: list });
+    res.json({ success: true, songs: list, ai: aiStatus, queueLength: queue.length });
 });
 
 app.post('/api/booth/:id/printed', requireAdmin, (req, res) => {
